@@ -1,0 +1,121 @@
+
+require(randomForest)
+
+
+randforest_getImportance <- function(input_data, OUT_DIR) {
+
+    n_trees = 300
+    
+    
+    train = input_data[,-1]                # training set withough first column (class)
+    train_cl = as.factor(input_data[-i,1]) # only classes of training set
+
+    fitrf <- randomForest(x = train, y = train_cl, ntree = n_trees, importance=T)
+
+    #fitrf <- randomForest(Type ~ ., input_data, importance=TRUE)
+
+    imp = fitrf$importance
+
+    ##
+    ## make bar plot for mean decrease of accuracy
+    ##
+    out_file = paste(OUT_DIR, "/importance_decrease_accuracy_dataset", DATA_SETUP_TEST, ".pdf", sep="")
+    pdf(out_file, width=5, height=5, paper='special' )
+
+    barplot(imp[,3], main="Random Forest", ylab="mean decrease in accuracy")
+
+    dev.off()
+    
+    
+
+    ## sort feature names by 'MeanDecreaseAccuracy'
+    #impvar <- rownames(imp)[order(imp[, 3], decreasing=TRUE)]
+
+
+    
+    #pdf("randForest_mse.pdf")
+    #
+    #op <- par(mfrow=c(2, 3))
+    #
+    #for (i in seq_along(impvar)) {
+    #
+    #    var_name = impvar[i]
+    #    browser()
+    #    partialPlot(fitrf, input_data, var_name, xlab = var_name,
+    #                main=paste("Partial Dependence on", var_name), ylim=c(1, 100))
+    #
+    #}
+    #
+    #par(op)
+    #
+    #dev.off()
+
+
+
+    ##
+    ## error rate for the forest
+    ##
+    #pdf("randForest_mse.pdf")
+    #plot(fitrf, main="Random Forest", type="o")
+    #dev.off()
+
+}
+
+main_randforest <- function(input_data) {
+
+
+    
+    results = list()
+
+    nr_samples = nrow(input_data)
+    
+    ##
+    ## Random forest with LOOCV
+    ##
+    n_trees = 300
+    m = 4
+
+    ## for the individual predition of each tree
+    predictions <- matrix(ncol = nr_samples, nrow = n_trees)
+
+    ## for the aggregated prediction
+    class_prob = c()
+    
+    for(i in 1:nr_samples){
+
+        train = input_data[-i,-1]   # training set withough first column (class)
+        train_cl = as.factor(input_data[-i,1]) # only classes of training set
+
+        test = input_data[i,-1]     # test sample without class
+
+        ## randomForest detects classification whenever y is a vector of factors
+        ##  ntree : size of the forest, i.e. number of trees
+        ##  mtry  : number of features to extract for a split operation (feature sub-selection)
+        ## 
+        fitrf <- randomForest(x = train, y = train_cl, ntree = n_trees, mtry = m, importance=T)
+
+
+        ## make prediction
+        predictrf <- predict(fitrf, test, type = "prob", predict.all = TRUE)
+
+        ## extract the individual predictions of each tree
+        for(j in 1:n_trees){
+            predictions[j,i] <- predictrf$individual[j]
+        }
+
+        ## extract the aggregated probability
+        class_prob = c(class_prob, 1 - unclass(predictrf$aggregate)[1])
+    }
+
+    ## Gets prediction rates for the randomForest 
+    predicti <- matrix(as.numeric(predictions), ncol = ncol(predictions))
+
+    results$pred.original = predicti
+
+    results$class_prob = class_prob
+    
+    
+    
+
+    return(results)
+}

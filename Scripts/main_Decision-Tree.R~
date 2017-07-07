@@ -1,0 +1,211 @@
+
+require(C50)
+
+
+
+main_tree_getParams <- function(input_data, DATA_SETUP_TEST, OUT_DIR, boost_trials) {
+
+    ##
+    ## Find out a cost penalty (error) that maximizes sensitivity/specificity scores using LOOCV.
+    ##   Run main_tree() with different settings of the error, and extract the one that gives
+    ##   the highest scores in terms of the sum of these scores.
+    ##
+
+    ## extract class labels as numeric values
+    true_labels = as.numeric(input_data$Type) - 1
+    
+    roc_points = matrix(ncol=5, nrow=0)  ## columns: FPR, Sensitivity, penalty, Boosting, Flag (best)
+    
+    
+    MAX_ERROR = 15   # try until this error
+    best_error = 0   # set with the best error, use for final run
+    best_score = 0   # remember the best score for the last error
+
+    mse_vec = c()
+    
+    for (error_cost in 0:MAX_ERROR) {
+
+        ## an error of 0 should be threated like a NULL (no penalty)
+        error_cost_arg = error_cost
+        if(error_cost == 0)
+            error_cost_arg = NULL
+
+        ## run the Tree method (uses LOOCV) with the error
+        cl = main_tree(heart_data, boost_trials, error_cost_arg)
+        
+        sens = Sensitivity(true_labels, cl)
+        spec = Specificity(true_labels, cl)
+        FPR  = 1 - spec
+        
+        roc_points = rbind(roc_points, c(FPR, sens, error_cost, boost_trials, 0))
+        
+        ## check if the score improved
+        if( (sens + spec) > best_score) {
+            best_score = sens + spec
+            best_error = error_cost
+        }
+
+        ## calculate MSE
+        mse_vec = c(mse_vec, 1/length(true_labels) *  sum((cl - true_labels)^2))
+        
+    }
+
+    ## flag ROC point that has highest (sensitivity + specificity)
+    roc_points[best_error + 1 ,5] = 1
+    
+    ##
+    ## print out error penalty
+    ##
+    cat(" * best error estimated (Sens/Spec) to be ", best_error, " using ", boost_trials, " boosting trial(s).\n")
+
+   
+    ## 
+    ## Calculate the convex hull, i.e. the ROC curve
+    ##
+    hull = quickhull_roc(roc_points[,1], roc_points[,2])
+
+    fpr = hull$x
+    sensit = hull$y
+
+    cat(" * Start plotting...\n")
+    
+    ##
+    ## plot ROC curve and coordinates for each method
+    ##
+    roc_out_file = paste(OUT_DIR, "/roc_curve_tree_boosting", boost_trials, "_dataset", DATA_SETUP_TEST, ".pdf", sep="")
+    pdf(roc_out_file, width=5, height=5, paper='special' )
+    
+    plot(fpr, sensit, col = "black",type = "l", lwd = 1, lty = 2, xlim = c(0,1), ylim = c(0,1), ylab = "Sensitivity", xlab = "1 - Specificity")
+
+
+    ##
+    ## plot individual method points
+    ##
+    for(idx in 1:nrow(roc_points)) {
+
+        ## get scores and add some jitter
+        x = roc_points[idx,1] + rnorm(1,0,0.005)  # FPR
+        y = roc_points[idx,2] + rnorm(1,0,0.005)  # sensitivity
+        
+        points(x,y, col = 1, lty=2, lwd=2, pch = 1, cex = 1.5)
+    }
+
+    ## draw the most left/upper point that indicates best score
+    max_id = which(roc_points[,5] == 1)  ## this is the row with the flag set to 1
+    
+    par(new=T)
+    plot( roc_points[max_id, 1], roc_points[max_id, 2], pch=2, lwd=2, col="blue", xlim=c(0,1), ylim=c(0,1), xlab="", ylab="")
+
+    ## add text to this point
+    text_x = roc_points[max_id, 1]
+    text_y = roc_points[max_id, 2]
+
+    ## make some hard coded adaptation, change if needed
+    if(text_x > 0.8) {
+        text_y = text_y + 0.06
+    } else {
+        text_x = text_x + 0.13
+    }
+    
+    text(text_x, text_y, sprintf("penalty=%i", best_error))
+
+    ##
+    ## Create title for the different data setups
+    ##
+    
+    var_names_str = paste(variable_names, collapse=', ')
+
+    ## make title that includes all the feature names in a single row
+    AUROC_score =  trapz(fpr, sensit)
+    title(sprintf("C5.0: Boosting trials: %i, AUROC: %.2g\n%s", boost_trials, AUROC_score, var_names_str))
+
+    dev.off()
+  
+    
+    ##
+    ## Find index that has lowest MSE, is equal to 'k'
+    ##
+    best_error_mse = which(mse_vec == min(mse_vec))[1] - 1  ## subtract -1 to shift (1,..,) to (0,..,)
+        
+    cat(" * best error estimated (MSE) to be ", best_error_mse, " using ", boost_trials, " boosting trial(s).\n")
+        
+    ##
+    ## plot parameter k against MSE
+    ##
+    pdf(paste(OUT_DIR, "/mse_cost_boost", boost_trials, "_dataset", DATA_SETUP_TEST, ".pdf", sep=""), width=5, height=5, paper='special' )
+
+    x_coord = 0:(length(mse_vec)-1)
+    plot(x_coord, mse_vec,  type="o", lty=1, lwd=2, xlab="penalty", ylab="error rate") 
+
+    abline(v = best_error_mse, lty = 4, col="black")
+
+    title_str = sprintf("C5.0 Decision Tree, boosting: %i", boost_trials)
+    title(title_str)
+
+    ## add text to the vertical line
+    #text_offset = best_error_mse + 2.1
+    #if (best_error_mse > 10)
+    #    text_offset = best_error_mse - 2
+    #
+    #text(text_offset, 0.5, paste("error=", best_error_mse))
+
+    dev.off()
+
+    
+    ## return boosting trials and error
+    return(list(boosting_trials = boost_trials, cost_penalty = best_error_mse))
+    
+}
+
+
+
+##
+## Execute C5.0 Decision Tree prediction with LOOCV using BOOSTING_TRIALS and COST_PENALTY as parameters
+##
+main_tree <- function(input_data, BOOSTING_TRIALS, COST_PENALTY) {
+
+    
+    nr_samples = nrow(input_data)
+    
+    input_data$Type = as.factor(input_data$Type)
+    
+
+    ##
+    ## LOOCV with tree prediciton
+    ##
+    
+    treepredictions <- c()
+
+    ## set the error, i.e. the cost penalty
+    if(is.null(COST_PENALTY))
+        errorcosts = NULL
+    else
+        errorcosts <- matrix(c(0,0,COST_PENALTY,0), nrow = 2) 
+
+
+    ## execute LOOCV iterations
+    for(i in 1:nr_samples){
+
+        ## extract training set by taking out one sample
+        treetraining = data.frame(input_data[-i,])
+        
+        ## build tree
+        treefit = C5.0(Type ~ . , data = treetraining, trials = BOOSTING_TRIALS, costs = errorcosts)
+        
+        ## extract test sample (excludes type in first column)
+        treetesting  = data.frame(input_data[i,2:ncol(input_data)])
+
+        ## predict class
+        treepredict <- predict(treefit, treetesting, type = "class")
+        
+        treepredictions <- c(treepredictions, treepredict)
+
+    }
+    
+    return(treepredictions - 1)
+    
+}
+
+
+
+

@@ -1,0 +1,153 @@
+
+require(glmnet)
+
+
+##
+## Repeat Lasso 'nr_bs' number of times and average over the predictions
+##
+lasso_main_bs <- function(data2, nr_bs) {
+    
+    
+    prediction_mat = matrix(0,ncol=nrow(data2), nrow=0)
+    
+    for (i in 1:nr_bs) {
+        
+        prediction = lasso_main(data2)
+
+        prediction_mat = rbind(prediction_mat, prediction)
+        
+    }
+
+    ## take mean over repeated Lasso runs
+    mean_pred = apply(prediction_mat, 2, mean)
+
+
+    ## Alternative: sample from binomial given the probability
+    # mean_pred = rbinom(length(mean_pred), 1, mean_pred)
+    
+    ## use decision boundary to select 0 or 1
+    mean_pred[mean_pred > 0.5] = 1
+    mean_pred[mean_pred != 1 ] = 0
+
+    return(mean_pred)
+}
+
+##
+## Run Lasso a single time
+##
+lasso_main <- function(data2) {
+
+    nr_samples = nrow(data2)
+
+    predictions = c()
+
+    results = list()
+    
+    ##
+    ## Use LOOCV 
+    ##
+
+    plda2preds <- c()
+    for(i in 1:nr_samples){
+
+        trainingset <- data2[-i,]
+
+        train_cl = as.vector(trainingset[,1])
+        train = as.matrix(trainingset[,-1])
+
+        test  = data2[i,]
+        test  = as.matrix(test[-1])  ## exclude type
+
+        ## run cross-validation on the training set
+        cvres = cv.glmnet(train, train_cl, family="binomial", alpha = 1)
+
+        ## make model with best lambda value
+        cv.model = glmnet(train, train_cl, family="binomial", lambda=cvres$lambda.min, alpha= 1)
+
+        ## predict response for test sample with Lasso model
+        cl_prob <- predict(cv.model, newx = test, s = cv.model$lambda.min, type="response", mode = "fraction")
+
+        ## append predicted value
+        predictions = c(predictions, cl_prob)
+
+    }
+
+    return(predictions)
+}
+
+
+
+plot_lasso_coeffs <- function(indata, plot_dir, DATA_SETUP_TEST, run_trial) {
+
+
+    X = as.matrix(indata[,2:ncol(indata)])
+    y = as.vector(indata[,1])
+
+    ## run cross-validation
+    cvres = cv.glmnet(X, y, family="binomial", standardize=TRUE)
+    res = coef(cvres, s = "lambda.min")
+    
+    
+    ##
+    ## For plotting: run full regularization path, plot and insert lambda mark
+    ##
+    lasso_res = glmnet(X, y, family="binomial")
+
+    cat(" * Plotting regularization path (trial ", run_trial, ").\n")
+    pdf(paste(plot_dir, "/lasso_lambda_set_trial", run_trial, "_dataset",  DATA_SETUP_TEST, ".pdf", sep=""), width=7, height=5, paper='special')
+    plot(lasso_res, "lambda")
+    min_log_lambda = log(cvres$lambda.min)
+    abline(v=min_log_lambda)
+    dev.off()
+
+
+    ## print variables and corresponding cofficients
+    sprintf("Regression coefficients at log lambda = %g", min_log_lambda)
+    res
+
+    return(res)
+}
+
+
+
+#
+# This will run Lasso 'n_times' to get more robust edge selections
+#  TODO: Could put this into main_lasso_bs() since it does the same. 
+#
+lasso_coeff_bs <- function(indata, penalty_alpha_mixing, n_times) {
+
+
+
+    X = as.matrix(indata[,2:ncol(indata)])
+    y = as.vector(indata[,1])
+
+    ## the coefficients are saved into here
+    betas = matrix(ncol=ncol(X), nrow=0)
+    
+    for (n in 1:n_times) {
+    
+        ## run cross-validation
+        cvres = cv.glmnet(X, y, family="binomial", standardize=TRUE, alpha=penalty_alpha_mixing)
+        res = coef(cvres, s = "lambda.min")
+        
+        ## remove intercept coefficient
+        res = res[-1]
+
+        ## append to beta matrix
+        betas = rbind(betas, res)
+
+    }
+
+    ## get mean for each coefficient
+    mean_coeff = apply(betas, 2, mean)
+    
+    ## get mean of absolute coefficient values
+    pos_mean_coeff = apply(abs(betas), 2, mean)
+    
+    ## calculate probability that edge is non-zero
+    betas[betas != 0] = 1   # set edges not zero to 1
+    prob_edge = apply(betas, 2, sum) / nrow(betas) # sum up and divide by number of trials
+    
+    return(list(mean_coeff = mean_coeff, pos_mean_coeff = pos_mean_coeff, prob_edge = prob_edge))
+}
+

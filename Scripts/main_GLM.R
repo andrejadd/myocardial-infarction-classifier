@@ -1,0 +1,38 @@
+
+
+##
+## Logistic Regression with a Generalized Linear Model (GLM) 
+## Prediction quality is assessed with leave-one-out cross-validation. 
+##
+main_glm <- function(data) {
+
+    data2 = data.frame(data)
+    
+    nr_samples = nrow(data2)
+
+    predictions = c()
+
+    results = list()
+    
+    ##
+    ## LOOCV with original data
+    ##
+    plda2preds <- c()
+    for(i in 1:nr_samples){
+
+        train <- data2[-i,]
+
+        test  = data2[i,]
+        test  = test[-1]  ## exclude type
+               
+        mod = glm(formula= Type ~ ., data=train, family=binomial)
+        
+        pred = predict(mod, test, type="response")
+
+        predictions = c(predictions, pred)
+    }
+
+
+    return(predictions)
+
+}
