@@ -52,8 +52,4 @@ These plots are compiled into the Latex file MI_Class_Report.tex. Use 'pdflatex 
 A text output of all the sensitivity and specificity values is saved into the file "Results/roc_points_results.csv". 
 
 
-Issues / Bugs
----------------
-
-See the file Known_Issues.org for TODO points and known warnings and errors. Some of them can be fixed, others can be ignored.
 

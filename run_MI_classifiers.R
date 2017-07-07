@@ -12,9 +12,6 @@
 ##
 
 
-## rm all
-## There seems to be a memory leak in the Decision Tree parameter estimation
-## Maybe use: sort( sapply(ls(),function(x){object.size(get(x))})) 
 
 rm(list=ls())
 
@@ -36,8 +33,8 @@ source(paste(SCRIPTS_DIR, "/create_class_table.R", sep=""))           ## compile
 ## Note: Methods are not executed in the order they appear here.
 ##
                                         
-#METHOD_LIST = c("GLM" , "LDA", "Decision-Tree", "KNN", "Lasso", "Uni-variate", "Random-Forest", "GP-ARD")
-METHOD_LIST = c("Decision-Tree")
+METHOD_LIST = c("GLM" , "LDA", "Decision-Tree", "KNN", "Lasso", "Uni-variate", "Random-Forest", "GP-ARD")
+# METHOD_LIST = c("Decision-Tree")
 
 
 
